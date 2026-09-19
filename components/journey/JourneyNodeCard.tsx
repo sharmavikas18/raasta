@@ -2,6 +2,7 @@
 import React from 'react';
 import { JourneyNode, Evidence, NodeStatus } from '@/types/domain';
 import { EvidenceBadge } from '@/components/ui/EvidenceBadge';
+import { Icon, IconName } from '@/components/ui/Icon';
 
 interface JourneyNodeCardProps {
   node: JourneyNode;
@@ -31,7 +32,7 @@ const STATUS_STYLE: Record<
     label: 'Blocked',
     badgeBg: 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/20',
     badgeText: 'text-rose-700 dark:text-rose-300',
-    icon: '⚠',
+    icon: '!',
     border: 'border-rose-500/40 dark:border-rose-500/30',
   },
   NEEDS_VERIFICATION: {
@@ -57,15 +58,15 @@ const STATUS_STYLE: Record<
   },
 };
 
-const TYPE_ICONS: Record<string, string> = {
-  DOCUMENT: '📄',
-  VERIFICATION: '🔍',
-  BOOKING: '✈',
-  REGISTRATION: '📝',
-  ACCESSIBILITY: '♿',
-  PREPARATION: '⚙',
-  DEADLINE: '⏱',
-  TASK: '◻',
+const TYPE_ICONS: Record<string, IconName> = {
+  DOCUMENT: 'file',
+  VERIFICATION: 'search',
+  BOOKING: 'calendar',
+  REGISTRATION: 'edit',
+  ACCESSIBILITY: 'accessibility',
+  PREPARATION: 'settings',
+  DEADLINE: 'calendar',
+  TASK: 'file',
 };
 
 export const JourneyNodeCard: React.FC<JourneyNodeCardProps> = ({
@@ -74,7 +75,7 @@ export const JourneyNodeCard: React.FC<JourneyNodeCardProps> = ({
   onStatusChange,
 }) => {
   const statusCfg = STATUS_STYLE[node.status] || STATUS_STYLE.NOT_STARTED;
-  const typeIcon = TYPE_ICONS[node.type] || '◻';
+  const typeIcon = TYPE_ICONS[node.type] || 'file';
 
   return (
     <div
@@ -83,9 +84,7 @@ export const JourneyNodeCard: React.FC<JourneyNodeCardProps> = ({
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2.5">
-          <span className="text-xl" role="img" aria-label={node.type}>
-            {typeIcon}
-          </span>
+          <span className="text-xl" aria-label={node.type}><Icon name={typeIcon} /></span>
           <div>
             <div className="flex items-center gap-2">
               <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
@@ -120,7 +119,7 @@ export const JourneyNodeCard: React.FC<JourneyNodeCardProps> = ({
       {/* Blocker Alert Box if Blocked */}
       {node.status === 'BLOCKED' && node.blockedReason && (
         <div className="mt-3 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-xs text-rose-800 dark:text-rose-300">
-          <span className="font-bold block mb-0.5">⚠ Blocked Condition:</span>
+          <span className="font-bold block mb-0.5">Blocked condition:</span>
           {node.blockedReason}
         </div>
       )}

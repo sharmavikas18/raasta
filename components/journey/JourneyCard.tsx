@@ -2,6 +2,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { Journey } from '@/types/domain';
+import { Icon } from '@/components/ui/Icon';
 
 interface JourneyCardProps {
   journey: Journey;
@@ -67,7 +68,7 @@ export const JourneyCard: React.FC<JourneyCardProps> = ({
         <div className="flex items-center gap-3">
           {blockersCount > 0 ? (
             <span className="text-rose-600 dark:text-rose-400 font-semibold flex items-center gap-1">
-              <span>⚠</span>
+              <Icon name="warning" size={14} />
               <span>{blockersCount} {blockersCount === 1 ? 'blocker' : 'blockers'}</span>
             </span>
           ) : (

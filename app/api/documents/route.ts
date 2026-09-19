@@ -1,24 +1,31 @@
 // RAASTA API — POST /api/documents — PRD §7 Flow 2, §14, AT-03, AT-04
 import { NextRequest, NextResponse } from 'next/server';
 import { journeyStore } from '@/lib/domain/journeyStore';
-import { extractDocumentRequirements } from '@/lib/api/bedrock';
+import { extractDocumentRequirements, extractPdfFromS3 } from '@/lib/api/bedrock';
 import { Journey, JourneyNode, Dependency, Evidence } from '@/types/domain';
 
 export async function POST(request: NextRequest) {
   try {
     const userId = request.headers.get('x-user-id') || 'usr_demo_antigravity_01';
     const body = await request.json();
-    const { documentText, fileName } = body;
+    const { documentText, fileName, s3Key } = body;
 
-    if (!documentText || typeof documentText !== 'string' || !documentText.trim()) {
+    if (!s3Key && (!documentText || typeof documentText !== 'string' || !documentText.trim())) {
       return NextResponse.json(
         { error: 'Document text content is required for processing' },
         { status: 400 }
       );
     }
 
-    // Call Bedrock extraction with validation pipeline (AT-03, AT-04, AT-09)
-    const extraction = await extractDocumentRequirements(documentText, fileName);
+    if (s3Key && (typeof s3Key !== 'string' || !s3Key.startsWith(`private/${userId}/`))) {
+      return NextResponse.json({ error: 'Invalid document location.' }, { status: 403 });
+    }
+
+    // Private PDFs are read directly from S3 by Bedrock. Text mode remains a
+    // useful local/demo fallback and never pretends to be an uploaded PDF.
+    const extraction = s3Key
+      ? await extractPdfFromS3(s3Key, fileName || 'uploaded-notice.pdf')
+      : await extractDocumentRequirements(documentText, fileName);
     if (!extraction) {
       return NextResponse.json(
         { error: 'Failed to extract structured document requirements' },

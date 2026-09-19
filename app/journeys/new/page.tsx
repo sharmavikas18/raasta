@@ -10,19 +10,19 @@ const SCENARIO_TEMPLATES = [
     title: 'Delhi Tech Conference 2026',
     category: 'EVENT',
     intent: 'I am attending the India AI & Cloud Summit in Delhi next month and need to manage registration, transit, accommodation, and venue arrival.',
-    icon: '🏢',
+    icon: '01',
   },
   {
     title: 'STEM Research Fellowship',
     category: 'SCHOLARSHIP',
     intent: 'Apply for the National Merit STEM Research Scholarship, prepare revenue income certificate, dean recommendation, and complete portal KYC before deadline.',
-    icon: '🎓',
+    icon: '02',
   },
   {
     title: 'International Academic Exchange',
     category: 'TRAVEL',
     intent: 'Plan my 3-month research visit to Singapore, including visa processing, university clearance, travel insurance, and hostel booking.',
-    icon: '✈',
+    icon: '03',
   },
 ];
 

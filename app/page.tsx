@@ -1,214 +1,124 @@
-// RAASTA Home Dashboard — PRD §6
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Journey, User, JourneyDetail } from '@/types/domain';
-import { JourneyCard } from '@/components/journey/JourneyCard';
-import { DoThisNowCard } from '@/components/journey/DoThisNowCard';
-import { ForesightCard } from '@/components/journey/ForesightCard';
+import { JourneyDetail } from '@/types/domain';
+import { Icon } from '@/components/ui/Icon';
+
+function countdown(deadline?: string | null) {
+  if (!deadline) return 'Deadline not set';
+  const distance = new Date(deadline).getTime() - Date.now();
+  if (distance <= 0) return 'Deadline passed';
+  const days = Math.floor(distance / 86_400_000);
+  const hours = Math.floor((distance % 86_400_000) / 3_600_000);
+  const minutes = Math.floor((distance % 3_600_000) / 60_000);
+  const seconds = Math.floor((distance % 60_000) / 1000);
+  return `${days}d ${hours}h ${minutes}m ${seconds}s`;
+}
 
 export default function HomePage() {
-  const [journeys, setJourneys] = useState<Journey[]>([]);
-  const [activeDetail, setActiveDetail] = useState<JourneyDetail | null>(null);
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [detail, setDetail] = useState<JourneyDetail | null>(null);
+  const [clock, setClock] = useState(Date.now());
+  const [remindersOn, setRemindersOn] = useState(false);
+  const [timerPosition, setTimerPosition] = useState({ x: 0, y: 0 });
+  const [dragStart, setDragStart] = useState<{ x: number; y: number; ox: number; oy: number } | null>(null);
 
   useEffect(() => {
-    async function loadDashboard() {
-      try {
-        const [jRes, pRes] = await Promise.all([
-          fetch('/api/journeys'),
-          fetch('/api/profile'),
-        ]);
-        const jData = await jRes.json();
-        const pData = await pRes.json();
-
-        setJourneys(jData.journeys || []);
-        setUser(pData.user || null);
-
-        // Load detail of the first active journey for the attention queue
-        if (jData.journeys && jData.journeys.length > 0) {
-          const detailRes = await fetch(`/api/journeys/${jData.journeys[0].id}`);
-          const detailData = await detailRes.json();
-          setActiveDetail(detailData);
-        }
-      } catch (err) {
-        console.error('Failed to load dashboard data:', err);
-      } finally {
-        setLoading(false);
+    const timer = window.setInterval(() => setClock(Date.now()), 1000);
+    async function load() {
+      const journeys = await fetch('/api/journeys').then((r) => r.json());
+      if (journeys.journeys?.[0]) {
+        const response = await fetch(`/api/journeys/${journeys.journeys[0].id}`);
+        if (response.ok) setDetail(await response.json());
       }
     }
-    loadDashboard();
+    load().catch(() => undefined);
+    return () => window.clearInterval(timer);
   }, []);
 
-  const handleCompleteAction = async (nodeId: string) => {
-    if (!activeDetail) return;
-    try {
-      const res = await fetch(`/api/nodes/${nodeId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          journeyId: activeDetail.journey.id,
-          status: 'COMPLETED',
-        }),
-      });
-      if (res.ok) {
-        const updated = await res.json();
-        setActiveDetail(updated);
-        // Refresh journeys list
-        const jRes = await fetch('/api/journeys');
-        const jData = await jRes.json();
-        setJourneys(jData.journeys || []);
-      }
-    } catch (err) {
-      console.error('Failed to complete action:', err);
+  useEffect(() => {
+    const deadline = detail?.journey.deadline;
+    if (!deadline || !remindersOn || !('Notification' in window) || Notification.permission !== 'granted') return;
+    const remaining = new Date(deadline).getTime() - clock;
+    const reminderKey = `raasta-reminder-${detail.journey.id}`;
+    if (remaining > 0 && remaining <= 86_400_000 && !localStorage.getItem(reminderKey)) {
+      new Notification('Raasta: deadline tomorrow', { body: `${detail.journey.title} is due within 24 hours.` });
+      localStorage.setItem(reminderKey, 'sent');
     }
+  }, [clock, detail, remindersOn]);
+
+  useEffect(() => {
+    if (!dragStart) return;
+    const move = (event: PointerEvent) => setTimerPosition({
+      x: dragStart.ox + event.clientX - dragStart.x,
+      y: dragStart.oy + event.clientY - dragStart.y,
+    });
+    const stop = () => setDragStart(null);
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', stop);
+    return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', stop); };
+  }, [dragStart]);
+
+  const enableReminders = async () => {
+    if (!('Notification' in window)) return;
+    const permission = await Notification.requestPermission();
+    setRemindersOn(permission === 'granted');
+    if (permission === 'granted') new Notification('Raasta reminders are on', { body: 'We will keep your deadlines visible.' });
   };
 
-  if (loading) {
-    return (
-      <div className="py-12 flex flex-col items-center justify-center space-y-3">
-        <div className="h-8 w-8 rounded-full border-2 border-orange-500 border-t-transparent animate-spin"></div>
-        <p className="text-xs text-zinc-500 animate-pulse font-medium">
-          Loading your active journeys & foresight...
-        </p>
-      </div>
-    );
-  }
+  const journey = detail?.journey;
+  const next = detail?.nextAction;
+  const tasks = detail?.nodes.filter((node) => node.status !== 'COMPLETED').slice(0, 3) ?? [];
 
   return (
-    <div className="space-y-8">
-      {/* 1. Contextual Greeting & Hero */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-zinc-200/80 dark:border-zinc-800 pb-6">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-semibold text-orange-600 dark:text-orange-400 uppercase tracking-wider">
-            <span>● Live Journey Engine</span>
-            <span>·</span>
-            <span>Foresight Active</span>
-          </div>
-          <h1 className="text-2xl md:text-3xl font-extrabold text-zinc-900 dark:text-zinc-50 tracking-tight mt-1">
-            Welcome, {user?.name || 'Aarav'}
-          </h1>
-          <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1">
-            Here is what requires your attention before you discover it too late.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <Link
-            href="/documents"
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-xs font-semibold text-zinc-700 dark:text-zinc-200 transition-colors shadow-sm"
-          >
-            <span>📄 Upload Notice PDF</span>
-          </Link>
-          <Link
-            href="/journeys/new"
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white text-xs font-bold shadow-md shadow-orange-500/20 transition-transform active:scale-95"
-          >
-            <span>+ Start New Goal</span>
-          </Link>
-        </div>
-      </div>
-
-      {/* 2. Attention Queue — Single Most Important Action */}
-      {activeDetail && activeDetail.nextAction && (
-        <section aria-labelledby="attention-queue-heading">
-          <div className="flex items-center justify-between mb-3">
-            <h2
-              id="attention-queue-heading"
-              className="text-xs font-extrabold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 flex items-center gap-2"
-            >
-              <span className="h-2 w-2 rounded-full bg-orange-500"></span>
-              <span>Priority Attention Queue — {activeDetail.journey.title}</span>
-            </h2>
-            <Link
-              href={`/journeys/${activeDetail.journey.id}`}
-              className="text-xs font-semibold text-orange-600 hover:underline"
-            >
-              View complete graph →
-            </Link>
-          </div>
-          <DoThisNowCard
-            nextAction={activeDetail.nextAction}
-            onCompleteAction={handleCompleteAction}
-          />
-        </section>
-      )}
-
-      {/* 3. Journey Readiness Grid */}
-      <section aria-labelledby="journeys-grid-heading">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2
-              id="journeys-grid-heading"
-              className="text-lg font-bold text-zinc-900 dark:text-zinc-50"
-            >
-              Active Journeys
-            </h2>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              Real-world goals tracked with dependency graphs
-            </p>
-          </div>
-          <Link
-            href="/journeys"
-            className="text-xs font-semibold text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-          >
-            View all ({journeys.length})
-          </Link>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {journeys.map((j) => (
-            <JourneyCard
-              key={j.id}
-              journey={j}
-              blockersCount={j.id === activeDetail?.journey.id ? activeDetail.readiness.blockerCount : 1}
-              unknownsCount={j.id === activeDetail?.journey.id ? activeDetail.readiness.criticalUnknowns : 1}
-            />
-          ))}
+    <div className="reminder-home">
+      <section className="reminder-hero">
+        <p className="eyebrow">YOUR REAL-WORLD REMINDER BOOK</p>
+        <h1>Know it <span>before</span> it is too late.</h1>
+        <p className="reminder-lede">Upload a notice. Raasta finds the deadline, what can block you, and the one thing to do next.</p>
+        <div className="hero-actions">
+          <Link href="/documents" className="sketch-button"><Icon name="upload" /> Upload a scholarship notice</Link>
+          <button className="scribble-control" onClick={enableReminders}><Icon name="bell" /> {remindersOn ? 'Reminders on' : 'Turn on reminders'}</button>
         </div>
       </section>
 
-      {/* 4. Foresight Feed */}
-      {activeDetail && activeDetail.foresightInsights.length > 0 && (
-        <section aria-labelledby="foresight-feed-heading">
-          <h2 id="foresight-feed-heading" className="sr-only">
-            Preventative Foresight
-          </h2>
-          <ForesightCard insights={activeDetail.foresightInsights} />
+      {journey ? (
+        <section className="deadline-board" aria-label="Active deadline">
+          <div className="deadline-copy">
+            <p className="eyebrow">ACTIVE JOURNEY · {journey.category}</p>
+            <h2>{journey.title}</h2>
+            <p>{journey.deadline ? `Deadline: ${new Date(journey.deadline).toLocaleString()}` : 'Add a deadline to start your countdown.'}</p>
+          </div>
+          <div className="countdown-note" aria-live="polite" style={{ transform: `translate(${timerPosition.x}px, ${timerPosition.y}px) rotate(1.5deg)` }} onPointerDown={(event) => setDragStart({ x: event.clientX, y: event.clientY, ox: timerPosition.x, oy: timerPosition.y })} title="Drag the timer anywhere on your page">
+            <span>TIME LEFT</span>
+            <strong key={clock}>{countdown(journey.deadline)}</strong>
+            <small><Icon name="clock" /> live countdown</small>
+            <em>drag me</em>
+          </div>
+        </section>
+      ) : (
+        <section className="empty-note"><span><Icon name="pin" size={30} /></span><div><h2>No deadline yet.</h2><p>Start with a goal or upload the scholarship notice you want Raasta to track.</p></div></section>
+      )}
+
+      {next && (
+        <section className="do-now" aria-label="Most useful next action">
+          <div className="do-now-sticker">DO THIS<br />NOW</div>
+          <div>
+            <p className="eyebrow">ONE USEFUL THING. NOT TWENTY TASKS.</p>
+            <h2><Icon name="arrow" /> {next.title}</h2>
+            <p>{next.reason}</p>
+          </div>
+          <Link href={`/journeys/${journey?.id}`} className="sketch-button">Open plan →</Link>
         </section>
       )}
 
-      {/* 5. 3-Minute Demo Guide Banner */}
-      <div className="p-5 rounded-2xl border border-dashed border-orange-500/40 bg-orange-500/5 dark:bg-orange-500/10 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div>
-          <span className="text-xs font-extrabold uppercase tracking-wider text-orange-700 dark:text-orange-400">
-            Quick 3-Minute MVP Evaluation Guide (PRD §40)
-          </span>
-          <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-50 mt-0.5">
-            Test the Core Scenarios
-          </h3>
-          <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1">
-            <strong>Scenario A:</strong> Upload scholarship notice → extract dependencies & unknowns. <br />
-            <strong>Scenario B & C:</strong> Inspect Delhi conference → toggle step-free accessibility → simulate venue relocation.
-          </p>
+      <section className="reminder-list">
+        <div className="section-heading"><div><p className="eyebrow">COMING UP</p><h2>Your reminder list</h2></div><Link href="/journeys">See all →</Link></div>
+        <div className="reminder-items">
+          {tasks.map((task) => <Link key={task.id} href={`/journeys/${journey?.id}`} className="reminder-item"><span><Icon name={task.status === 'NEEDS_VERIFICATION' ? 'warning' : task.status === 'BLOCKED' ? 'warning' : 'calendar'} /></span><div><strong>{task.title}</strong><small>{task.dueAt ? `Due ${new Date(task.dueAt).toLocaleDateString()}` : 'No date set'}</small></div><b><Icon name="arrow" /></b></Link>)}
+          {!tasks.length && <p className="quiet-copy">Your next reminders will appear here after you create a journey.</p>}
         </div>
-        <div className="flex items-center gap-2">
-          <Link
-            href="/documents"
-            className="px-3 py-1.5 rounded-lg bg-white dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 text-xs font-bold hover:bg-zinc-50"
-          >
-            Scholarship Demo
-          </Link>
-          <Link
-            href="/journeys/jrn_delhi_conference_2026"
-            className="px-3 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold"
-          >
-            Conference Demo
-          </Link>
-        </div>
-      </div>
+      </section>
     </div>
   );
 }

@@ -9,6 +9,7 @@ import { DoThisNowCard } from '@/components/journey/DoThisNowCard';
 import { JourneyGraph } from '@/components/journey/JourneyGraph';
 import { ForesightCard } from '@/components/journey/ForesightCard';
 import { ChangeBanner } from '@/components/journey/ChangeBanner';
+import { Icon } from '@/components/ui/Icon';
 
 export default function JourneyDetailPage({
   params,
@@ -115,7 +116,7 @@ export default function JourneyDetailPage({
   if (error || !detail) {
     return (
       <div className="p-8 max-w-lg mx-auto rounded-2xl border border-rose-200 dark:border-rose-900/50 bg-rose-50/50 dark:bg-rose-950/20 text-center space-y-4">
-        <span className="text-3xl">⚠</span>
+        <span className="text-3xl" aria-hidden="true">!</span>
         <h2 className="text-lg font-bold text-rose-900 dark:text-rose-200">
           Unable to Open Journey
         </h2>
@@ -158,7 +159,7 @@ export default function JourneyDetailPage({
             </span>
             {detail.journey.deadline && (
               <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">
-                ⏱ Deadline: <strong>{new Date(detail.journey.deadline).toLocaleDateString()}</strong>
+                Deadline: <strong>{new Date(detail.journey.deadline).toLocaleDateString()}</strong>
               </span>
             )}
           </div>
@@ -181,7 +182,7 @@ export default function JourneyDetailPage({
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/30 text-xs font-bold transition-colors"
             title="Simulate external venue relocation to test downstream change propagation (AT-07)"
           >
-            <span>⚡</span>
+            <Icon name="zap" />
             <span>{isSimulating ? 'Simulating...' : 'Simulate Venue Change'}</span>
           </button>
 
@@ -189,7 +190,7 @@ export default function JourneyDetailPage({
             href="/profile"
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-xs font-semibold text-zinc-700 dark:text-zinc-200 transition-colors"
           >
-            <span>♿ Adapt Accessibility</span>
+            <><Icon name="accessibility" /> Adapt Accessibility</>
           </Link>
         </div>
       </div>
