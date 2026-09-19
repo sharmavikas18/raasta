@@ -16,6 +16,19 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Private PDF upload and Bedrock analysis
+
+The app works in demo mode by default (`MOCK_AI=true`). To upload a real scholarship PDF privately and have Bedrock extract its deadline, configure:
+
+```bash
+AWS_REGION=ap-south-1
+RAASTA_DOCUMENTS_BUCKET=your-private-raasta-documents-bucket
+BEDROCK_DOCUMENT_MODEL_ID=your-document-capable-bedrock-model-id
+MOCK_AI=false
+```
+
+Keep the S3 bucket private. The browser receives a five-minute, single-object presigned upload URL; it never receives AWS credentials or a public document URL. The app sends the resulting `s3://` object location to Bedrock Converse for PDF interpretation. The Lambda/Next execution role needs `s3:PutObject` for the private prefix and `bedrock:InvokeModel` for the chosen model.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

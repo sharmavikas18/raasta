@@ -3,6 +3,7 @@
 
 import React from 'react';
 import Link from 'next/link';
+import { Icon } from '@/components/ui/Icon';
 
 interface TopBarProps {
   onMobileMenuToggle?: () => void;
@@ -19,7 +20,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onMobileMenuToggle }) => {
             className="md:hidden p-1.5 rounded-lg text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:text-zinc-100 dark:hover:bg-zinc-900"
             aria-label="Toggle navigation menu"
           >
-            ☰
+            <Icon name="menu" />
           </button>
         )}
         <div className="hidden sm:flex items-center gap-2 text-xs font-medium text-zinc-500 dark:text-zinc-400">

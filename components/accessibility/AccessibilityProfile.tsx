@@ -3,6 +3,7 @@
 
 import React from 'react';
 import { UserProfileConstraint, ConstraintType } from '@/types/domain';
+import { Icon, IconName } from '@/components/ui/Icon';
 
 interface AccessibilityProfileProps {
   preferences: UserProfileConstraint[];
@@ -12,30 +13,30 @@ interface AccessibilityProfileProps {
 
 const PREF_DESCRIPTIONS: Record<
   ConstraintType,
-  { title: string; desc: string; icon: string; impact: string }
+  { title: string; desc: string; icon: IconName; impact: string }
 > = {
   STEP_FREE: {
     title: 'Step-Free / Ramp & Elevator Route',
     desc: 'Prefers routes without stairs, escalators without level alternatives, or unpaved curbs.',
-    icon: '♿',
+    icon: 'accessibility',
     impact: 'Flags unverified station ramps, venue elevators, and curb cuts as explicit UNKNOWNS.',
   },
   VISUAL_ASSISTANCE: {
     title: 'Visual Accessibility Assistance',
     desc: 'Prefers audio announcements, high-contrast digital schedules, and wayfinding staff guidance.',
-    icon: '👁',
+    icon: 'eye',
     impact: 'Adds verification tasks for screen-reader friendly programs and guided venue tours.',
   },
   HEARING_COMMUNICATION: {
     title: 'Hearing / Assistive Communication',
     desc: 'Prefers real-time captions (CART), induction audio loops, and visual emergency alerts.',
-    icon: '🦻',
+    icon: 'ear',
     impact: 'Checks conference session halls for live transcription and audio loop infrastructure.',
   },
   REDUCED_WALKING: {
     title: 'Reduced Walking / Lower Physical Strain',
     desc: 'Prefers shortest walking distance from transit drop-off and guaranteed seating intervals.',
-    icon: '🚶',
+    icon: 'walk',
     impact: 'Audits walking distances between transit gates and hall entrances before booking.',
   },
 };
@@ -49,7 +50,7 @@ export const AccessibilityProfile: React.FC<AccessibilityProfileProps> = ({
     <div className="rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-sm space-y-6">
       <div>
         <div className="flex items-center gap-2">
-          <span className="text-xl">♿</span>
+          <span className="accessibility-heading-icon"><Icon name="accessibility" size={22} /></span>
           <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-50">
             Personal Accessibility Preferences
           </h2>
@@ -77,9 +78,7 @@ export const AccessibilityProfile: React.FC<AccessibilityProfileProps> = ({
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="flex items-start gap-3">
-                  <span className="text-xl mt-0.5" role="img" aria-hidden="true">
-                    {info.icon}
-                  </span>
+                  <span className={`accessibility-option-icon accessibility-icon-${type.toLowerCase()}`} aria-hidden="true"><Icon name={info.icon} size={20} /></span>
                   <div>
                     <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-50">
                       {info.title}
@@ -88,7 +87,7 @@ export const AccessibilityProfile: React.FC<AccessibilityProfileProps> = ({
                       {info.desc}
                     </p>
                     <p className="text-[11px] text-orange-700 dark:text-orange-300 font-medium mt-1.5 flex items-center gap-1">
-                      <span>✦ Effect:</span>
+                      <span className="accessibility-effect-icon"><Icon name="spark" size={12} /> Effect:</span>
                       <span>{info.impact}</span>
                     </p>
                   </div>

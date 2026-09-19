@@ -1,6 +1,7 @@
 // RAASTA Foresight Insights Card Component — PRD §12, §19
 import React from 'react';
 import { ForesightInsight } from '@/types/domain';
+import { Icon, IconName } from '@/components/ui/Icon';
 
 interface ForesightCardProps {
   insights: ForesightInsight[];
@@ -11,25 +12,25 @@ const SEVERITY_CONFIG = {
     badge: 'bg-rose-500 text-white',
     border: 'border-rose-500/30',
     bg: 'bg-rose-500/5',
-    icon: '⚡',
+    icon: 'zap' as IconName,
   },
   HIGH: {
     badge: 'bg-amber-500 text-white',
     border: 'border-amber-500/30',
     bg: 'bg-amber-500/5',
-    icon: '⚠',
+    icon: 'warning' as IconName,
   },
   MEDIUM: {
     badge: 'bg-blue-500 text-white',
     border: 'border-blue-500/30',
     bg: 'bg-blue-500/5',
-    icon: 'ℹ',
+    icon: 'spark' as IconName,
   },
   LOW: {
     badge: 'bg-zinc-500 text-white',
     border: 'border-zinc-500/30',
     bg: 'bg-zinc-500/5',
-    icon: '•',
+    icon: 'file' as IconName,
   },
 };
 
@@ -40,7 +41,7 @@ export const ForesightCard: React.FC<ForesightCardProps> = ({ insights }) => {
     <div className="rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900/70 p-5 shadow-sm space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-amber-500 text-lg">✦</span>
+          <Icon name="spark" size={20} />
           <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-50">
             Foresight & Surprise Prevention
           </h3>
@@ -61,7 +62,7 @@ export const ForesightCard: React.FC<ForesightCardProps> = ({ insights }) => {
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="font-bold text-sm text-zinc-900 dark:text-zinc-50 flex items-center gap-2">
-                  <span>{cfg.icon}</span>
+                  <Icon name={cfg.icon} size={16} />
                   <span>{item.title}</span>
                 </span>
                 <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full ${cfg.badge}`}>

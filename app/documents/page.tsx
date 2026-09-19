@@ -4,6 +4,7 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { EvidenceBadge } from '@/components/ui/EvidenceBadge';
+import { Icon } from '@/components/ui/Icon';
 
 const SAMPLE_SCHOLARSHIP_TEXT = `GOVERNMENT OF INDIA
 DEPARTMENT OF SCIENCE & TECHNOLOGY
@@ -41,27 +42,59 @@ export default function DocumentsPage() {
   const router = useRouter();
   const [docText, setDocText] = useState(SAMPLE_SCHOLARSHIP_TEXT);
   const [fileName, setFileName] = useState('DST_STEM_Research_Fellowship_Notice_2026.pdf');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<any | null>(null);
   const [createdJourneyId, setCreatedJourneyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handleAnalyze = async () => {
-    if (!docText.trim()) {
+    if (!selectedFile && !docText.trim()) {
       setError('Please provide document text or select sample.');
       return;
     }
 
     setError(null);
     setIsAnalyzing(true);
+    setUploadStatus(null);
 
     try {
+      let s3Key: string | undefined;
+      if (selectedFile) {
+        setUploadStatus('Saving your PDF privately…');
+        const sign = await fetch('/api/documents/upload-url', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fileName: selectedFile.name, contentType: selectedFile.type, size: selectedFile.size }),
+        });
+        const signed = await sign.json();
+        if (!sign.ok) {
+          // Keep local demo mode resilient when AWS variables are absent.
+          if (sign.status === 503) {
+            setUploadStatus('AWS is not configured — using the local Bedrock demo…');
+            s3Key = undefined;
+          } else {
+            throw new Error(signed.error || 'Could not prepare private upload.');
+          }
+        }
+        if (!sign.ok && !s3Key) {
+          // Continue with the sample/document text path below.
+        } else {
+          s3Key = signed.key;
+        }
+        if (sign.ok && signed.mode !== 'mock') {
+          const put = await fetch(signed.uploadUrl, { method: 'PUT', headers: { 'Content-Type': 'application/pdf' }, body: selectedFile });
+          if (!put.ok) throw new Error('Private PDF upload failed.');
+        }
+        setUploadStatus('Reading deadline and requirements with Bedrock…');
+      }
       const res = await fetch('/api/documents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           documentText: docText,
-          fileName,
+          fileName: selectedFile?.name || fileName,
+          s3Key,
         }),
       });
 
@@ -77,11 +110,12 @@ export default function DocumentsPage() {
       setError(err?.message || 'Failed to analyze document.');
     } finally {
       setIsAnalyzing(false);
+      setUploadStatus(null);
     }
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 py-4">
+    <div className="max-w-4xl mx-auto space-y-8 py-4 documents-page">
       <div>
         <span className="text-xs font-bold uppercase tracking-wider text-orange-600 dark:text-orange-400">
           ● Document Intelligence — Scenario A (PRD §2, §14)
@@ -99,7 +133,7 @@ export default function DocumentsPage() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4 border-b border-zinc-100 dark:border-zinc-800">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-xl bg-orange-500/10 text-orange-600 dark:text-orange-400 flex items-center justify-center font-bold text-lg">
-              📄
+              <Icon name="file" />
             </div>
             <div>
               <h2 className="text-sm font-bold text-zinc-900 dark:text-zinc-50">
@@ -133,6 +167,17 @@ export default function DocumentsPage() {
           </div>
         </div>
 
+        <label className="upload-dropzone">
+          <input type="file" accept="application/pdf,.pdf" className="sr-only" disabled={isAnalyzing}
+            onChange={(event) => {
+              const file = event.target.files?.[0] || null;
+              setSelectedFile(file); if (file) { setFileName(file.name); setError(null); }
+            }} />
+          <span><Icon name="upload" size={26} /></span>
+          <strong>{selectedFile ? selectedFile.name : 'Choose your scholarship PDF'}</strong>
+          <small>{selectedFile ? `${Math.ceil(selectedFile.size / 1024)} KB · ready for private upload` : 'PDF only · private S3 storage · max 10 MB'}</small>
+        </label>
+
         {/* Text Preview Box */}
         <div>
           <label htmlFor="doc-content-textarea" className="text-xs font-bold uppercase tracking-wider text-zinc-400 block mb-2">
@@ -153,6 +198,7 @@ export default function DocumentsPage() {
             {error}
           </div>
         )}
+        {isAnalyzing && uploadStatus && <p className="upload-status">⏳ {uploadStatus}</p>}
       </div>
 
       {/* Analysis Results View (AT-03 & AT-04) */}

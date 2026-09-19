@@ -5,6 +5,7 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Journey } from '@/types/domain';
 import { JourneyCard } from '@/components/journey/JourneyCard';
+import { Icon } from '@/components/ui/Icon';
 
 export default function MyJourneysPage() {
   const [journeys, setJourneys] = useState<Journey[]>([]);
@@ -32,7 +33,7 @@ export default function MyJourneysPage() {
   });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 journeys-page">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-extrabold text-zinc-900 dark:text-zinc-50 tracking-tight">
@@ -77,7 +78,7 @@ export default function MyJourneysPage() {
         </div>
       ) : filtered.length === 0 ? (
         <div className="p-12 text-center rounded-2xl border border-dashed border-zinc-300 dark:border-zinc-800 space-y-3">
-          <span className="text-3xl">☍</span>
+          <Icon name="spark" size={30} />
           <h3 className="text-base font-bold text-zinc-800 dark:text-zinc-200">
             No Journeys Found
           </h3>

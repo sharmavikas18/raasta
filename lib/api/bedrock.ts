@@ -145,6 +145,51 @@ export async function extractDocumentRequirements(documentText: string, fileName
 }
 
 /**
+ * Analyses a private S3 PDF directly with Bedrock Converse. The PDF never passes
+ * through the browser after upload and no document contents are logged.
+ */
+export async function extractPdfFromS3(s3Key: string, fileName: string) {
+  if (IS_MOCK_AI) {
+    return extractDocumentRequirements('[PDF uploaded to private S3]', fileName);
+  }
+
+  const bucket = process.env.RAASTA_DOCUMENTS_BUCKET;
+  if (!bucket) throw new Error('S3_UPLOAD_NOT_CONFIGURED');
+
+  try {
+    const { BedrockRuntimeClient, ConverseCommand } = await import('@aws-sdk/client-bedrock-runtime');
+    const client = new BedrockRuntimeClient({ region: process.env.AWS_REGION || 'ap-south-1' });
+    const safeDocumentName = fileName.replace(/[^a-zA-Z0-9 ()_\-[\]]/g, ' ').slice(0, 100) || 'notice';
+    const response = await client.send(new ConverseCommand({
+      modelId: process.env.BEDROCK_DOCUMENT_MODEL_ID || BEDROCK_MODEL_ID,
+      system: [{ text: DOCUMENT_SYSTEM_PROMPT }],
+      inferenceConfig: { maxTokens: 4096, temperature: 0.1 },
+      messages: [{
+        role: 'user',
+        content: [
+          {
+            document: {
+              name: safeDocumentName,
+              format: 'pdf',
+              source: { s3Location: { uri: `s3://${bucket}/${s3Key}` } },
+            },
+          },
+          { text: buildDocumentUserPrompt('Read the attached PDF as the source of truth.', fileName) },
+        ],
+      }],
+    }));
+    const raw = response.output?.message?.content?.find((item: { text?: string }) => item.text)?.text;
+    const parsed = raw ? extractAndParseJson(raw) : { success: false };
+    const validation = parsed.success ? validateDocumentExtraction(parsed.parsed) : null;
+    if (!validation?.isValid) throw new Error('AI_VALIDATION_FAILED: PDF extraction response was invalid');
+    return validation.data;
+  } catch (err: any) {
+    console.error('[Bedrock PDF] analysis failed:', err?.message || err);
+    throw new Error(`PDF_ANALYSIS_UNAVAILABLE: ${err?.message || 'Bedrock document analysis failed'}`);
+  }
+}
+
+/**
  * Deterministic Mock AI Responses for local UI development & AT-10
  */
 function getMockModelResponse(options: BedrockInvokeOptions): string {

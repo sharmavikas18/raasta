@@ -63,7 +63,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto space-y-8 py-4">
+    <div className="max-w-3xl mx-auto space-y-8 py-4 profile-page">
       <div>
         <span className="text-xs font-bold uppercase tracking-wider text-orange-600 dark:text-orange-400">
           ● User Context & Preferences

@@ -17,7 +17,7 @@ export const ChangeBanner: React.FC<ChangeBannerProps> = ({
     <div className="rounded-2xl border-2 border-amber-500/50 bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-transparent p-5 shadow-lg shadow-amber-500/5 relative animate-in fade-in slide-in-from-top-2 duration-300">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2.5">
-          <span className="text-xl">⚠️</span>
+          <span className="text-xl" aria-hidden="true">!</span>
           <div>
             <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-bold uppercase tracking-wider">
               <span>Journey Change Detected</span>
