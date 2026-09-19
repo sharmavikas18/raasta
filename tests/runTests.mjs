@@ -301,9 +301,70 @@ console.log('Running Test 5: AI Schema Validation (AT-09)...');
   const invalidResult = validateDocumentExtraction(invalid);
   assert.strictEqual(invalidResult.isValid, false, 'Invalid schema must be rejected');
   assert(invalidResult.errors.length > 0, 'Must describe schema validation errors');
-  console.log('✓ Test 5 Passed: AI response validation catches malformed outputs (AT-09)');
+console.log('✓ Test 5 Passed: AI response validation catches malformed outputs (AT-09)');
+}
+
+// ─── Test 6: Graph Invariants & Dependency-aware Actions ─────
+console.log('Running Test 6: Graph invariants & dependency-aware actions...');
+{
+  const { assertValidJourneyGraph } = await import('../lib/domain/graph.ts');
+  const { selectNextAction } = await import('../lib/readiness/nextAction.ts');
+
+  const journey = {
+    id: 'j_graph', userId: 'u_graph', title: 'Graph test', originalIntent: '',
+    category: 'OTHER', status: 'ACTIVE', readinessPercent: null, deadline: null,
+    priority: 'HIGH', createdAt: '', updatedAt: '',
+  };
+  const node = (id, status, priority = 'HIGH') => ({
+    id, journeyId: 'j_graph', title: id, description: '', type: 'TASK', status,
+    priority, dueAt: null, blockedReason: null, nextAction: id,
+    isRequired: true, weight: 5, createdAt: '', updatedAt: '',
+  });
+  const upstream = node('upstream', 'IN_PROGRESS');
+  const downstream = { ...node('downstream', 'NOT_STARTED', 'CRITICAL'), dueAt: '2026-09-21T00:00:00Z' };
+  const dependencies = [{
+    id: 'dep_upstream_downstream', journeyId: 'j_graph', fromNodeId: 'upstream',
+    toNodeId: 'downstream', relationship: 'PREREQUISITE', isBlocking: true,
+  }];
+
+  assert.strictEqual(
+    selectNextAction([upstream, downstream], dependencies, new Date('2026-09-20T00:00:00Z'))?.nodeId,
+    'upstream',
+    'The engine must not recommend a high-priority task before its prerequisite'
+  );
+
+  assert.throws(
+    () => assertValidJourneyGraph(journey, [upstream, downstream], [
+      ...dependencies,
+      { id: 'dep_cycle', journeyId: 'j_graph', fromNodeId: 'downstream', toNodeId: 'upstream', relationship: 'LOOP', isBlocking: true },
+    ]),
+    /cycle/i,
+    'The engine must reject cyclic dependency graphs'
+  );
+  console.log('✓ Test 6 Passed: Invalid graphs are rejected and actions respect prerequisites');
+}
+
+// ─── Test 7: Model output boundary rejects invalid dependency graph ─
+console.log('Running Test 7: Model output graph validation...');
+{
+  const { validateIntentExtraction } = await import('../lib/api/validation.ts');
+  const invalidCycle = validateIntentExtraction({
+    normalizedGoal: 'Cycle test', category: 'OTHER', estimatedDeadline: null,
+    keyEntities: [], constraints: [], missingHighValueQuestions: [],
+    candidateNodes: [
+      { tempId: 'a', title: 'A', description: '', type: 'TASK', priority: 'HIGH', isRequired: true, estimatedDaysBeforeDeadline: null },
+      { tempId: 'b', title: 'B', description: '', type: 'TASK', priority: 'HIGH', isRequired: true, estimatedDaysBeforeDeadline: null },
+    ],
+    candidateDependencies: [
+      { fromTempId: 'a', toTempId: 'b', relationship: 'PREREQUISITE', isBlocking: true },
+      { fromTempId: 'b', toTempId: 'a', relationship: 'PREREQUISITE', isBlocking: true },
+    ],
+  });
+  assert.strictEqual(invalidCycle.isValid, false, 'A model-generated dependency cycle must be rejected');
+  assert(invalidCycle.errors.some((error) => /cycle/i.test(error)), 'The cycle must be explained');
+  console.log('✓ Test 7 Passed: Invalid model graph cannot enter the engine');
 }
 
 console.log('\n========================================');
-console.log('🎉 ALL 5 CRITICAL TEST SUITES PASSED! 🎉');
+console.log('🎉 ALL 7 CRITICAL TEST SUITES PASSED! 🎉');
 console.log('========================================\n');

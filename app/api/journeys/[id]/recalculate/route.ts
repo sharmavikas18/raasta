@@ -1,6 +1,7 @@
 // RAASTA API — POST /api/journeys/:id/recalculate — PRD §25
 import { NextRequest, NextResponse } from 'next/server';
 import { journeyStore } from '@/lib/domain/journeyStore';
+import { routeErrorResponse } from '@/lib/api/routeError';
 
 export async function POST(
   request: NextRequest,
@@ -16,13 +17,7 @@ export async function POST(
     }
 
     return NextResponse.json(detail);
-  } catch (err: any) {
-    if (err?.message === 'FORBIDDEN_OWNERSHIP_MISMATCH') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-    return NextResponse.json(
-      { error: err?.message || 'Recalculation failed' },
-      { status: 500 }
-    );
+  } catch (error: unknown) {
+    return routeErrorResponse(error, 'Recalculation failed');
   }
 }

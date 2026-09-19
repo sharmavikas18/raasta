@@ -106,6 +106,10 @@ export default function DocumentsPage() {
       const result = await res.json();
       setAnalysisResult(result.extraction);
       setCreatedJourneyId(result.journeyId);
+      // The primary action promises a generated journey. Take the user to it
+      // immediately instead of leaving the successful result below the long
+      // document preview.
+      router.push(`/journeys/${result.journeyId}`);
     } catch (err: any) {
       setError(err?.message || 'Failed to analyze document.');
     } finally {

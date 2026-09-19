@@ -1,6 +1,7 @@
 // RAASTA API — GET /api/journeys/:id — PRD §24, §25, AT-08
 import { NextRequest, NextResponse } from 'next/server';
 import { journeyStore } from '@/lib/domain/journeyStore';
+import { routeErrorResponse } from '@/lib/api/routeError';
 
 export async function GET(
   request: NextRequest,
@@ -16,16 +17,7 @@ export async function GET(
     }
 
     return NextResponse.json(detail);
-  } catch (err: any) {
-    if (err?.message === 'FORBIDDEN_OWNERSHIP_MISMATCH') {
-      return NextResponse.json(
-        { error: 'Forbidden: You do not own this journey' },
-        { status: 403 }
-      );
-    }
-    return NextResponse.json(
-      { error: err?.message || 'Failed to retrieve journey' },
-      { status: 500 }
-    );
+  } catch (error: unknown) {
+    return routeErrorResponse(error, 'Failed to retrieve journey');
   }
 }

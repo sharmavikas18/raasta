@@ -2,27 +2,29 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { journeyStore } from '@/lib/domain/journeyStore';
 import { extractGoalIntent } from '@/lib/api/bedrock';
-import { Journey, JourneyNode, Dependency, Priority } from '@/types/domain';
+import { Journey, JourneyNode, Dependency } from '@/types/domain';
+import { routeErrorResponse } from '@/lib/api/routeError';
 
 export async function GET(request: NextRequest) {
   try {
     const userId = request.headers.get('x-user-id') || 'usr_demo_antigravity_01';
     const journeys = journeyStore.getJourneys(userId);
     return NextResponse.json({ journeys });
-  } catch (err: any) {
-    return NextResponse.json({ error: err?.message || 'Failed to fetch journeys' }, { status: 500 });
+  } catch (error: unknown) {
+    return routeErrorResponse(error, 'Failed to fetch journeys');
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
     const userId = request.headers.get('x-user-id') || 'usr_demo_antigravity_01';
-    const body = await request.json();
-    const { intent, context } = body;
+    const body: { intent?: unknown; context?: unknown } = await request.json();
+    const { intent } = body;
 
     if (!intent || typeof intent !== 'string' || !intent.trim()) {
       return NextResponse.json({ error: 'Intent description is required' }, { status: 400 });
     }
+    const context = isStringRecord(body.context) ? body.context : undefined;
 
     // Call Bedrock (or mock adapter) to extract structured intent & candidate graph
     const extracted = await extractGoalIntent(intent, context);
@@ -30,7 +32,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to extract structured goal intent' }, { status: 422 });
     }
 
-    const journeyId = `jrn_${Date.now()}`;
+    const journeyId = `jrn_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
 
     const newJourney: Journey = {
@@ -38,7 +40,7 @@ export async function POST(request: NextRequest) {
       userId,
       title: extracted.normalizedGoal,
       originalIntent: intent,
-      category: extracted.category as any,
+      category: extracted.category,
       status: 'ACTIVE',
       readinessPercent: null,
       deadline: extracted.estimatedDeadline,
@@ -49,12 +51,12 @@ export async function POST(request: NextRequest) {
 
     // Map candidate nodes to JourneyNodes
     const tempIdToRealId = new Map<string, string>();
-    const nodes: JourneyNode[] = extracted.candidateNodes.map((cn: any, index: number) => {
+    const nodes: JourneyNode[] = extracted.candidateNodes.map((cn, index) => {
       const nodeId = `node_${journeyId}_${index + 1}`;
       tempIdToRealId.set(cn.tempId, nodeId);
 
       let dueAt: string | null = null;
-      if (extracted.estimatedDeadline && cn.estimatedDaysBeforeDeadline) {
+      if (extracted.estimatedDeadline && cn.estimatedDaysBeforeDeadline !== null) {
         const d = new Date(extracted.estimatedDeadline);
         d.setDate(d.getDate() - cn.estimatedDaysBeforeDeadline);
         dueAt = d.toISOString();
@@ -65,9 +67,9 @@ export async function POST(request: NextRequest) {
         journeyId,
         title: cn.title,
         description: cn.description,
-        type: cn.type || 'TASK',
+        type: cn.type,
         status: index === 0 ? 'IN_PROGRESS' : 'NOT_STARTED',
-        priority: (cn.priority as Priority) || 'MEDIUM',
+        priority: cn.priority,
         dueAt,
         blockedReason: null,
         nextAction: cn.title,
@@ -79,22 +81,20 @@ export async function POST(request: NextRequest) {
     });
 
     // Map candidate dependencies
-    const dependencies: Dependency[] = extracted.candidateDependencies
-      .map((cd: any, index: number) => {
-        const fromId = tempIdToRealId.get(cd.fromTempId);
-        const toId = tempIdToRealId.get(cd.toTempId);
-        if (!fromId || !toId) return null;
-
-        return {
-          id: `dep_${journeyId}_${index + 1}`,
-          journeyId,
-          fromNodeId: fromId,
-          toNodeId: toId,
-          relationship: cd.relationship || 'PREREQUISITE',
-          isBlocking: cd.isBlocking ?? true,
-        };
-      })
-      .filter(Boolean) as Dependency[];
+    const dependencies: Dependency[] = [];
+    extracted.candidateDependencies.forEach((dependency, index) => {
+      const fromId = tempIdToRealId.get(dependency.fromTempId);
+      const toId = tempIdToRealId.get(dependency.toTempId);
+      if (!fromId || !toId) return;
+      dependencies.push({
+        id: `dep_${journeyId}_${index + 1}`,
+        journeyId,
+        fromNodeId: fromId,
+        toNodeId: toId,
+        relationship: dependency.relationship,
+        isBlocking: dependency.isBlocking,
+      });
+    });
 
     // Save into journeyStore
     const detail = journeyStore.createJourney(newJourney, nodes, dependencies, []);
@@ -115,11 +115,16 @@ export async function POST(request: NextRequest) {
       clarifyingQuestions: extracted.missingHighValueQuestions,
       detail: finalDetail,
     });
-  } catch (err: any) {
-    console.error('Error creating journey:', err);
-    return NextResponse.json(
-      { error: err?.message || 'Failed to create journey' },
-      { status: 500 }
-    );
+  } catch (error: unknown) {
+    return routeErrorResponse(error, 'Failed to create journey');
   }
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.values(value).every((item) => typeof item === 'string')
+  );
 }

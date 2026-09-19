@@ -1,6 +1,8 @@
 // RAASTA API — POST /api/journeys/:id/changes — PRD §7 Flow 4, §25, AT-07
 import { NextRequest, NextResponse } from 'next/server';
 import { journeyStore } from '@/lib/domain/journeyStore';
+import { routeErrorResponse } from '@/lib/api/routeError';
+import { isChangeType } from '@/lib/domain/graph';
 
 export async function POST(
   request: NextRequest,
@@ -12,11 +14,14 @@ export async function POST(
     const body = await request.json();
     const { nodeId, changeType, oldValue, newValue } = body;
 
-    if (!nodeId || !changeType || !newValue) {
+    if (typeof nodeId !== 'string' || !nodeId || !isChangeType(changeType) || typeof newValue !== 'string' || !newValue.trim()) {
       return NextResponse.json(
-        { error: 'Missing required parameters: nodeId, changeType, newValue' },
+        { error: 'Provide a nodeId, valid changeType, and newValue.' },
         { status: 400 }
       );
+    }
+    if (oldValue !== undefined && typeof oldValue !== 'string') {
+      return NextResponse.json({ error: 'oldValue must be a string.' }, { status: 400 });
     }
 
     const updatedDetail = journeyStore.simulateChange(
@@ -25,17 +30,11 @@ export async function POST(
       userId,
       changeType,
       oldValue || 'Original configuration',
-      newValue
+      newValue.trim()
     );
 
     return NextResponse.json(updatedDetail);
-  } catch (err: any) {
-    if (err?.message === 'FORBIDDEN_OWNERSHIP_MISMATCH') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-    return NextResponse.json(
-      { error: err?.message || 'Change simulation failed' },
-      { status: 500 }
-    );
+  } catch (error: unknown) {
+    return routeErrorResponse(error, 'Change simulation failed');
   }
 }

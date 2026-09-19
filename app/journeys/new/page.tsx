@@ -26,7 +26,7 @@ const SCENARIO_TEMPLATES = [
   },
 ];
 
-export const PROCESSING_MESSAGES = [
+const PROCESSING_MESSAGES = [
   'Understanding your goal with Bedrock reasoning...',
   'Structuring prerequisites and time dependencies...',
   'Scanning for missing dependencies & blind spots...',

@@ -7,7 +7,6 @@ import {
   Evidence,
   UserProfileConstraint,
   ForesightInsight,
-  Priority,
 } from '@/types/domain';
 
 let insightCounter = 0;
@@ -27,6 +26,9 @@ export function generateForesightInsights(
   deadline: string | null,
   now: Date = new Date()
 ): ForesightInsight[] {
+  // The engine is pure from a caller's perspective: unchanged input produces
+  // unchanged insight IDs, which keeps UI reconciliation stable on refresh.
+  insightCounter = 0;
   const insights: ForesightInsight[] = [];
 
   insights.push(...detectMissingPrerequisites(nodes, dependencies));

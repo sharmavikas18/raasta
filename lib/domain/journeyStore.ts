@@ -12,6 +12,13 @@ import {
   NodeStatus,
   ChangeType,
 } from '@/types/domain';
+import { DomainError } from '@/lib/domain/errors';
+import {
+  assertValidJourneyGraph,
+  getUnmetBlockingDependencies,
+  isChangeType,
+  isNodeStatus,
+} from '@/lib/domain/graph';
 import { calculateReadiness } from '@/lib/readiness/engine';
 import { selectNextAction } from '@/lib/readiness/nextAction';
 import { generateForesightInsights } from '@/lib/foresight/engine';
@@ -47,23 +54,21 @@ class JourneyStore {
     this.users.set(DEMO_USER.id, { ...DEMO_USER });
 
     // Seed Scholarship
-    this.journeys.set(SCHOLARSHIP_JOURNEY.id, { ...SCHOLARSHIP_JOURNEY });
-    this.nodes.set(SCHOLARSHIP_JOURNEY.id, SCHOLARSHIP_NODES.map((n) => ({ ...n })));
-    this.dependencies.set(
-      SCHOLARSHIP_JOURNEY.id,
-      SCHOLARSHIP_DEPENDENCIES.map((d) => ({ ...d }))
+    this.storeGraph(
+      SCHOLARSHIP_JOURNEY,
+      SCHOLARSHIP_NODES,
+      SCHOLARSHIP_DEPENDENCIES,
+      SCHOLARSHIP_EVIDENCE
     );
-    this.evidence.set(SCHOLARSHIP_JOURNEY.id, SCHOLARSHIP_EVIDENCE.map((e) => ({ ...e })));
     this.changeEvents.set(SCHOLARSHIP_JOURNEY.id, []);
 
     // Seed Conference
-    this.journeys.set(CONFERENCE_JOURNEY.id, { ...CONFERENCE_JOURNEY });
-    this.nodes.set(CONFERENCE_JOURNEY.id, CONFERENCE_NODES.map((n) => ({ ...n })));
-    this.dependencies.set(
-      CONFERENCE_JOURNEY.id,
-      CONFERENCE_DEPENDENCIES.map((d) => ({ ...d }))
+    this.storeGraph(
+      CONFERENCE_JOURNEY,
+      CONFERENCE_NODES,
+      CONFERENCE_DEPENDENCIES,
+      CONFERENCE_EVIDENCE
     );
-    this.evidence.set(CONFERENCE_JOURNEY.id, CONFERENCE_EVIDENCE.map((e) => ({ ...e })));
     this.changeEvents.set(CONFERENCE_JOURNEY.id, []);
   }
 
@@ -73,7 +78,7 @@ class JourneyStore {
       // Return default user for smooth demo
       return { ...DEMO_USER, id: userId };
     }
-    return user;
+    return { ...user, accessibilityPreferences: user.accessibilityPreferences.map((p) => ({ ...p })) };
   }
 
   public updateUser(userId: string, updates: Partial<User>): User {
@@ -83,8 +88,8 @@ class JourneyStore {
       ...updates,
       updatedAt: new Date().toISOString(),
     };
-    this.users.set(userId, updated);
-    return updated;
+    this.users.set(userId, cloneUser(updated));
+    return cloneUser(updated);
   }
 
   public getJourneys(userId: string): Journey[] {
@@ -96,7 +101,7 @@ class JourneyStore {
         const deps = this.dependencies.get(journey.id) || [];
         const readiness = calculateReadiness(nodes, deps);
         list.push({
-          ...journey,
+          ...cloneJourney(journey),
           readinessPercent: readiness.percent,
         });
       }
@@ -110,7 +115,7 @@ class JourneyStore {
 
     // PRD §24 / AT-08: Enforce ownership check
     if (journey.userId !== userId && userId !== 'system_admin') {
-      throw new Error('FORBIDDEN_OWNERSHIP_MISMATCH');
+      throw new DomainError('FORBIDDEN_OWNERSHIP_MISMATCH', 'Forbidden: You do not own this journey.');
     }
 
     const nodes = this.nodes.get(journeyId) || [];
@@ -131,13 +136,13 @@ class JourneyStore {
 
     return {
       journey: {
-        ...journey,
+        ...cloneJourney(journey),
         readinessPercent: readiness.percent,
       },
-      nodes,
-      dependencies: deps,
-      evidence: ev,
-      changeEvents: events,
+      nodes: nodes.map(cloneNode),
+      dependencies: deps.map(cloneDependency),
+      evidence: ev.map(cloneEvidence),
+      changeEvents: events.map(cloneChangeEvent),
       readiness,
       nextAction,
       foresightInsights,
@@ -150,44 +155,89 @@ class JourneyStore {
     dependencies: Dependency[],
     evidence: Evidence[] = []
   ): JourneyDetail {
+    if (this.journeys.has(journey.id)) {
+      throw new DomainError('DUPLICATE_ID', `Journey "${journey.id}" already exists.`);
+    }
+
     const now = new Date().toISOString();
-    journey.createdAt = now;
-    journey.updatedAt = now;
+    const createdJourney = { ...journey, createdAt: now, updatedAt: now };
+    const createdNodes = nodes.map((node) => ({
+      ...node,
+      journeyId: createdJourney.id,
+      createdAt: node.createdAt || now,
+      updatedAt: node.updatedAt || now,
+    }));
+    const createdDependencies = dependencies.map((dependency) => ({
+      ...dependency,
+      journeyId: createdJourney.id,
+    }));
+    const createdEvidence = evidence.map((item) => ({ ...item, journeyId: createdJourney.id }));
 
-    this.journeys.set(journey.id, journey);
-    this.nodes.set(journey.id, nodes);
-    this.dependencies.set(journey.id, dependencies);
-    this.evidence.set(journey.id, evidence);
-    this.changeEvents.set(journey.id, []);
+    this.storeGraph(createdJourney, createdNodes, createdDependencies, createdEvidence);
+    this.changeEvents.set(createdJourney.id, []);
 
-    return this.getJourneyDetail(journey.id, journey.userId)!;
+    return this.getJourneyDetail(createdJourney.id, createdJourney.userId)!;
   }
 
   public updateNode(
     journeyId: string,
     nodeId: string,
     userId: string,
-    updates: Partial<JourneyNode>
+    updates: NodeUpdate
   ): JourneyDetail {
     const journey = this.journeys.get(journeyId);
-    if (!journey) throw new Error('JOURNEY_NOT_FOUND');
-    if (journey.userId !== userId) throw new Error('FORBIDDEN_OWNERSHIP_MISMATCH');
+    if (!journey) throw new DomainError('JOURNEY_NOT_FOUND', 'Journey not found.');
+    if (journey.userId !== userId) {
+      throw new DomainError('FORBIDDEN_OWNERSHIP_MISMATCH', 'Forbidden: You do not own this journey.');
+    }
 
     const nodes = this.nodes.get(journeyId) || [];
     const nodeIndex = nodes.findIndex((n) => n.id === nodeId);
-    if (nodeIndex === -1) throw new Error('NODE_NOT_FOUND');
+    if (nodeIndex === -1) throw new DomainError('NODE_NOT_FOUND', 'Journey node not found.');
+
+    if (updates.status !== undefined && !isNodeStatus(updates.status)) {
+      throw new DomainError('INVALID_NODE_STATUS', 'The requested node status is invalid.');
+    }
+    if (updates.status === undefined && updates.nextAction === undefined && updates.blockedReason === undefined) {
+      throw new DomainError('INVALID_UPDATE', 'Provide at least one node field to update.');
+    }
+
+    const currentNode = nodes[nodeIndex];
+    if (updates.status === 'COMPLETED') {
+      const unmet = getUnmetBlockingDependencies(nodeId, nodes, this.dependencies.get(journeyId) || []);
+      if (unmet.length > 0) {
+        throw new DomainError(
+          'NODE_DEPENDENCY_UNMET',
+          `Complete "${unmet[0].title}" before marking this step complete.`
+        );
+      }
+    }
 
     const updatedNode = {
-      ...nodes[nodeIndex],
+      ...currentNode,
       ...updates,
+      blockedReason:
+        updates.status && updates.status !== 'BLOCKED' && updates.blockedReason === undefined
+          ? null
+          : updates.blockedReason === undefined
+            ? currentNode.blockedReason
+            : updates.blockedReason,
+      nextAction:
+        updates.status === 'COMPLETED' && updates.nextAction === undefined
+          ? null
+          : updates.nextAction === undefined
+            ? currentNode.nextAction
+            : updates.nextAction,
       updatedAt: new Date().toISOString(),
     };
-    nodes[nodeIndex] = updatedNode;
-    this.nodes.set(journeyId, nodes);
+    const updatedNodes = nodes.map((node, index) => (index === nodeIndex ? updatedNode : node));
 
-    // Update journey timestamp
-    journey.updatedAt = new Date().toISOString();
-    this.journeys.set(journeyId, journey);
+    this.storeGraph(
+      this.reconcileJourneyStatus(journey, updatedNodes),
+      updatedNodes,
+      this.dependencies.get(journeyId) || [],
+      this.evidence.get(journeyId) || []
+    );
 
     return this.getJourneyDetail(journeyId, userId)!;
   }
@@ -201,11 +251,19 @@ class JourneyStore {
     newValue: string
   ): JourneyDetail {
     const journey = this.journeys.get(journeyId);
-    if (!journey) throw new Error('JOURNEY_NOT_FOUND');
-    if (journey.userId !== userId) throw new Error('FORBIDDEN_OWNERSHIP_MISMATCH');
+    if (!journey) throw new DomainError('JOURNEY_NOT_FOUND', 'Journey not found.');
+    if (journey.userId !== userId) {
+      throw new DomainError('FORBIDDEN_OWNERSHIP_MISMATCH', 'Forbidden: You do not own this journey.');
+    }
+    if (!isChangeType(changeType)) {
+      throw new DomainError('INVALID_CHANGE_TYPE', 'The requested change type is invalid.');
+    }
 
     const nodes = this.nodes.get(journeyId) || [];
     const deps = this.dependencies.get(journeyId) || [];
+    if (!nodes.some((node) => node.id === nodeId)) {
+      throw new DomainError('NODE_NOT_IN_JOURNEY', 'The change target does not belong to this journey.');
+    }
 
     const { updatedNodes, changeEvent } = applyJourneyChange(
       journeyId,
@@ -217,20 +275,24 @@ class JourneyStore {
       deps
     );
 
-    this.nodes.set(journeyId, updatedNodes);
+    this.storeGraph(
+      { ...journey, updatedAt: new Date().toISOString() },
+      updatedNodes,
+      deps,
+      this.evidence.get(journeyId) || []
+    );
     const existingEvents = this.changeEvents.get(journeyId) || [];
-    this.changeEvents.set(journeyId, [changeEvent, ...existingEvents]);
-
-    journey.updatedAt = new Date().toISOString();
-    this.journeys.set(journeyId, journey);
+    this.changeEvents.set(journeyId, [cloneChangeEvent(changeEvent), ...existingEvents.map(cloneChangeEvent)]);
 
     return this.getJourneyDetail(journeyId, userId)!;
   }
 
   public adaptAccessibility(journeyId: string, userId: string): JourneyDetail {
     const journey = this.journeys.get(journeyId);
-    if (!journey) throw new Error('JOURNEY_NOT_FOUND');
-    if (journey.userId !== userId) throw new Error('FORBIDDEN_OWNERSHIP_MISMATCH');
+    if (!journey) throw new DomainError('JOURNEY_NOT_FOUND', 'Journey not found.');
+    if (journey.userId !== userId) {
+      throw new DomainError('FORBIDDEN_OWNERSHIP_MISMATCH', 'Forbidden: You do not own this journey.');
+    }
 
     const user = this.getUser(userId);
     const nodes = this.nodes.get(journeyId) || [];
@@ -246,18 +308,90 @@ class JourneyStore {
         user.accessibilityPreferences
       );
 
-    this.nodes.set(journeyId, updatedNodes);
-    this.dependencies.set(journeyId, updatedDependencies);
-    this.evidence.set(journeyId, updatedEvidence);
+    this.storeGraph(
+      { ...journey, updatedAt: new Date().toISOString() },
+      updatedNodes,
+      updatedDependencies,
+      updatedEvidence
+    );
 
     const existingEvents = this.changeEvents.get(journeyId) || [];
-    this.changeEvents.set(journeyId, [...addedEvents, ...existingEvents]);
-
-    journey.updatedAt = new Date().toISOString();
-    this.journeys.set(journeyId, journey);
+    this.changeEvents.set(journeyId, [
+      ...addedEvents.map(cloneChangeEvent),
+      ...existingEvents.map(cloneChangeEvent),
+    ]);
 
     return this.getJourneyDetail(journeyId, userId)!;
   }
+
+  private storeGraph(
+    journey: Journey,
+    nodes: JourneyNode[],
+    dependencies: Dependency[],
+    evidence: Evidence[]
+  ): void {
+    assertValidJourneyGraph(journey, nodes, dependencies);
+    const nodeIds = new Set(nodes.map((node) => node.id));
+    for (const item of evidence) {
+      if (item.journeyId !== journey.id || !nodeIds.has(item.nodeId)) {
+        throw new DomainError('INVALID_GRAPH', 'Every evidence item must belong to a node in its journey.');
+      }
+    }
+
+    this.journeys.set(journey.id, cloneJourney(journey));
+    this.nodes.set(journey.id, nodes.map(cloneNode));
+    this.dependencies.set(journey.id, dependencies.map(cloneDependency));
+    this.evidence.set(journey.id, evidence.map(cloneEvidence));
+  }
+
+  private reconcileJourneyStatus(journey: Journey, nodes: JourneyNode[]): Journey {
+    const requiredNodes = nodes.filter((node) => node.isRequired);
+    const allRequiredComplete =
+      requiredNodes.length > 0 &&
+      requiredNodes.every(
+        (node) => node.status === 'COMPLETED' || node.status === 'NOT_APPLICABLE'
+      );
+    const status = allRequiredComplete
+      ? 'COMPLETED'
+      : journey.status === 'COMPLETED'
+        ? 'ACTIVE'
+        : journey.status;
+    return { ...journey, status, updatedAt: new Date().toISOString() };
+  }
+}
+
+interface NodeUpdate {
+  status?: NodeStatus;
+  nextAction?: string | null;
+  blockedReason?: string | null;
+}
+
+function cloneJourney(journey: Journey): Journey {
+  return { ...journey };
+}
+
+function cloneNode(node: JourneyNode): JourneyNode {
+  return { ...node };
+}
+
+function cloneDependency(dependency: Dependency): Dependency {
+  return { ...dependency };
+}
+
+function cloneEvidence(evidence: Evidence): Evidence {
+  return { ...evidence };
+}
+
+function cloneChangeEvent(event: ChangeEvent): ChangeEvent {
+  return { ...event, impact: [...event.impact] };
+}
+
+function cloneUser(user: User): User {
+  return {
+    ...user,
+    accessibilityPreferences: user.accessibilityPreferences.map((preference) => ({ ...preference })),
+    notificationPreferences: { ...user.notificationPreferences },
+  };
 }
 
 // Global singleton instance

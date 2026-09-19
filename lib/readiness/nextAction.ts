@@ -8,6 +8,10 @@ import type {
   NodeStatus,
   Priority,
 } from '../../types/domain.ts';
+import {
+  countDownstreamNodes,
+  getUnmetBlockingDependencies,
+} from '../domain/graph.ts';
 
 const PRIORITY_SCORE: Record<Priority, number> = {
   CRITICAL: 100,
@@ -39,9 +43,10 @@ export function selectNextAction(
   now: Date = new Date()
 ): NextAction | null {
   // Only consider actionable nodes
-  const actionable = nodes.filter(
-    (n) => STATUS_ELIGIBILITY.has(n.status) && n.status !== 'BLOCKED'
-  );
+  const actionable = nodes.filter((node) => {
+    if (!STATUS_ELIGIBILITY.has(node.status) || node.status === 'BLOCKED') return false;
+    return getUnmetBlockingDependencies(node.id, nodes, dependencies).length === 0;
+  });
 
   if (actionable.length === 0) {
     // Check if there are blocked nodes — the action is to unblock
@@ -56,19 +61,19 @@ export function selectNextAction(
   // Score each actionable node
   const scored = actionable.map((node) => ({
     node,
-    score: computeActionScore(node, nodes, dependencies, now),
+    score: computeActionScore(node, dependencies, now),
   }));
 
   // Sort by score descending
-  scored.sort((a, b) => b.score - a.score);
+  scored.sort((a, b) => b.score - a.score || a.node.id.localeCompare(b.node.id));
 
   const best = scored[0];
-  const blocksCount = countDownstreamBlocked(best.node.id, dependencies);
+  const blocksCount = countDownstreamNodes(best.node.id, dependencies);
 
   return {
     nodeId: best.node.id,
     title: best.node.nextAction || best.node.title,
-    reason: generateReason(best.node, blocksCount),
+    reason: generateReason(best.node, blocksCount, now),
     urgency: best.node.priority,
     blocksCount,
   };
@@ -76,14 +81,13 @@ export function selectNextAction(
 
 function computeActionScore(
   node: JourneyNode,
-  allNodes: JourneyNode[],
   dependencies: Dependency[],
   now: Date
 ): number {
   let score = PRIORITY_SCORE[node.priority];
 
   // Bonus for blocking other tasks
-  const downstreamBlocked = countDownstreamBlocked(node.id, dependencies);
+  const downstreamBlocked = countDownstreamNodes(node.id, dependencies);
   score += downstreamBlocked * 20;
 
   // Bonus for being required
@@ -104,12 +108,6 @@ function computeActionScore(
   if (!node.isRequired) score -= 20;
 
   return score;
-}
-
-function countDownstreamBlocked(nodeId: string, dependencies: Dependency[]): number {
-  return dependencies.filter(
-    (d) => d.fromNodeId === nodeId && d.isBlocking
-  ).length;
 }
 
 function findUnblockingAction(
@@ -156,14 +154,14 @@ function findUnblockingAction(
   };
 }
 
-function generateReason(node: JourneyNode, blocksCount: number): string {
+function generateReason(node: JourneyNode, blocksCount: number, now: Date): string {
   if (blocksCount > 0) {
     return `This blocks ${blocksCount} downstream step${blocksCount > 1 ? 's' : ''}`;
   }
 
   if (node.dueAt) {
     const daysUntil = Math.ceil(
-      (new Date(node.dueAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+      (new Date(node.dueAt).getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
     );
     if (daysUntil <= 1) return 'Due today or tomorrow';
     if (daysUntil <= 3) return `Due in ${daysUntil} days`;

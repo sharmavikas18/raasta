@@ -3,7 +3,7 @@
 
 import assert from 'node:assert';
 
-const BASE_URL = 'http://localhost:3000';
+const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 
 console.log('🚀 Running Live End-to-End HTTP Integration Test Suite...');
 
@@ -139,6 +139,36 @@ console.log('\n[E2E 6] Testing Document Intelligence Analysis (AT-03, AT-04)...'
   const unkNode = docResult.detail.nodes.find((n) => n.status === 'NEEDS_VERIFICATION');
   assert(unkNode !== undefined, 'Ambiguous requirement must be marked NEEDS_VERIFICATION (AT-04)');
   console.log(`✓ Passed: Extracted document requirements and marked ambiguous clause as NEEDS_VERIFICATION (AT-03, AT-04)`);
+}
+
+// ─── E2E 6b: Selected-PDF Upload Handoff ──────────────────────
+console.log('\n[E2E 6b] Testing selected-PDF upload handoff...');
+{
+  const fileName = 'LFX_2026_Term3_KubeEdge_Ianvs_Pretest.pdf';
+  const uploadRes = await fetch(`${BASE_URL}/api/documents/upload-url`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-user-id': 'usr_demo_antigravity_01',
+    },
+    body: JSON.stringify({ fileName, contentType: 'application/pdf', size: 14 * 1024 }),
+  });
+  assert.strictEqual(uploadRes.status, 200, 'Selected PDF must receive a private upload target');
+  const upload = await uploadRes.json();
+  assert(upload.key, 'Upload target must return a private key');
+
+  const analysisRes = await fetch(`${BASE_URL}/api/documents`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-user-id': 'usr_demo_antigravity_01',
+    },
+    body: JSON.stringify({ fileName, s3Key: upload.key }),
+  });
+  assert.strictEqual(analysisRes.status, 200, 'Selected PDF must create a journey');
+  const analysis = await analysisRes.json();
+  assert(analysis.journeyId, 'Selected PDF result must include the generated journey id');
+  console.log(`✓ Passed: Selected PDF created journey "${analysis.journeyId}"`);
 }
 
 // ─── E2E 7: Natural Language Intent Creation (AT-01, AT-02) ────

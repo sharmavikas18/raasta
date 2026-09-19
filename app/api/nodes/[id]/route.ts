@@ -1,6 +1,8 @@
 // RAASTA API — PATCH /api/nodes/:id — PRD §25
 import { NextRequest, NextResponse } from 'next/server';
 import { journeyStore } from '@/lib/domain/journeyStore';
+import { routeErrorResponse } from '@/lib/api/routeError';
+import { isNodeStatus } from '@/lib/domain/graph';
 
 export async function PATCH(
   request: NextRequest,
@@ -12,8 +14,17 @@ export async function PATCH(
     const body = await request.json();
     const { journeyId, status, nextAction, blockedReason } = body;
 
-    if (!journeyId) {
+    if (typeof journeyId !== 'string' || !journeyId) {
       return NextResponse.json({ error: 'journeyId is required' }, { status: 400 });
+    }
+    if (status !== undefined && !isNodeStatus(status)) {
+      return NextResponse.json({ error: 'Invalid node status.' }, { status: 400 });
+    }
+    if (nextAction !== undefined && nextAction !== null && typeof nextAction !== 'string') {
+      return NextResponse.json({ error: 'nextAction must be a string or null.' }, { status: 400 });
+    }
+    if (blockedReason !== undefined && blockedReason !== null && typeof blockedReason !== 'string') {
+      return NextResponse.json({ error: 'blockedReason must be a string or null.' }, { status: 400 });
     }
 
     const updatedDetail = journeyStore.updateNode(journeyId, id, userId, {
@@ -23,13 +34,7 @@ export async function PATCH(
     });
 
     return NextResponse.json(updatedDetail);
-  } catch (err: any) {
-    if (err?.message === 'FORBIDDEN_OWNERSHIP_MISMATCH') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-    return NextResponse.json(
-      { error: err?.message || 'Node update failed' },
-      { status: 500 }
-    );
+  } catch (error: unknown) {
+    return routeErrorResponse(error, 'Node update failed');
   }
 }

@@ -7,6 +7,7 @@ import type {
   ChangeEvent,
   ChangeType,
 } from '../../types/domain.ts';
+import { DomainError } from './errors.ts';
 
 export interface ChangeSimulationResult {
   updatedNodes: JourneyNode[];
@@ -31,6 +32,9 @@ export function applyJourneyChange(
 ): ChangeSimulationResult {
   const updatedNodes = nodes.map((node) => ({ ...node }));
   const targetNode = updatedNodes.find((n) => n.id === targetNodeId);
+  if (!targetNode) {
+    throw new DomainError('NODE_NOT_FOUND', 'Journey node not found.');
+  }
 
   const affectedNodeIds: string[] = [targetNodeId];
   const impactMessages: string[] = [];
@@ -59,15 +63,22 @@ export function applyJourneyChange(
 
     for (const node of updatedNodes) {
       if (node.id === targetNodeId) {
-        node.description = `${node.description}\n[UPDATED VENUE: ${newValue} (previously ${oldValue})]`;
+        const baseDescription = node.description.split('\n[UPDATED VENUE:')[0];
+        node.description = `${baseDescription}\n[UPDATED VENUE: ${newValue} (previously ${oldValue})]`;
         node.status = 'NEEDS_VERIFICATION';
+        node.blockedReason = null;
         node.nextAction = `Verify new venue location at ${newValue} and check updated entrance guide`;
         node.updatedAt = now;
       } else if (
+        affectedNodeIds.includes(node.id) &&
         node.title.toLowerCase().includes('travel') ||
+        affectedNodeIds.includes(node.id) &&
         node.title.toLowerCase().includes('transit') ||
+        affectedNodeIds.includes(node.id) &&
         node.title.toLowerCase().includes('commute') ||
+        affectedNodeIds.includes(node.id) &&
         node.title.toLowerCase().includes('metro') ||
+        affectedNodeIds.includes(node.id) &&
         node.title.toLowerCase().includes('cab')
       ) {
         node.status = 'NEEDS_VERIFICATION';
